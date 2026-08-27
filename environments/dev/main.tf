@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Local Values for Common Naming & Tags
+# Local Values for Common Naming & Dynamic Tags
 # -----------------------------------------------------------------------------
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
@@ -50,9 +50,9 @@ module "storage_account" {
   storage_account_name     = var.storage_account_name
   resource_group_name      = module.resource_group.resource_group_name
   location                 = module.resource_group.resource_group_location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  containers               = ["data", "logs"]
+  account_tier             = var.storage_account_tier
+  account_replication_type = var.storage_replication_type
+  containers               = var.storage_containers
   tags                     = local.common_tags
 
   depends_on = [module.resource_group]
@@ -67,7 +67,7 @@ module "linux_vm" {
   vm_name              = "vm-${local.name_prefix}"
   resource_group_name  = module.resource_group.resource_group_name
   location             = module.resource_group.resource_group_location
-  subnet_id            = module.networking.subnet_ids["app-subnet"]
+  subnet_id            = values(module.networking.subnet_ids)[0]
   vm_size              = var.vm_size
   admin_username       = var.admin_username
   admin_password       = var.admin_password

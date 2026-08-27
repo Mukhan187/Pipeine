@@ -1,4 +1,4 @@
-name: "Terraform Azure CI/CD Pipeline"
+name: "Terraform Dynamic Azure Pipeline"
 
 on:
   push:
@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Select target environment"
+        description: "Target Environment"
         required: true
         default: "dev"
         type: choice
@@ -27,7 +27,7 @@ on:
           - dev
           - prod
       action:
-        description: "Terraform action to perform"
+        description: "Terraform Action"
         required: true
         default: "plan"
         type: choice
@@ -46,15 +46,18 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  TF_STATE_RG: ${{ secrets.TF_STATE_RESOURCE_GROUP || 'rg-terraform-tfstate' }}
+  TF_STATE_STORAGE: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
+  TF_STATE_CONTAINER: ${{ secrets.TF_STATE_CONTAINER || 'tfstate' }}
   TF_VERSION: "1.7.5"
-  DEFAULT_ENV_DIR: "environments/dev"
+  TARGET_ENV: ${{ github.event.inputs.environment || 'dev' }}
 
 jobs:
   # ===========================================================================
-  # 1. LINT & VALIDATE
+  # 1. LINT & SYNTAX VALIDATION (No Azure credentials needed)
   # ===========================================================================
   validate:
-    name: "Terraform Format & Validate"
+    name: "Lint & Validate Code"
     runs-on: ubuntu-latest
 
     steps:
@@ -69,19 +72,23 @@ jobs:
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
-      - name: Initialize Dev Environment
-        working-directory: ${{ env.DEFAULT_ENV_DIR }}
-        run: terraform init -backend=false
+      - name: Validate Dev Environment
+        working-directory: environments/dev
+        run: |
+          terraform init -backend=false
+          terraform validate
 
-      - name: Validate Dev Code
-        working-directory: ${{ env.DEFAULT_ENV_DIR }}
-        run: terraform validate
+      - name: Validate Prod Environment
+        working-directory: environments/prod
+        run: |
+          terraform init -backend=false
+          terraform validate
 
   # ===========================================================================
-  # 2. PLAN (Runs on PR and Pushes to main)
+  # 2. TERRAFORM PLAN (Dynamic Backend Injection)
   # ===========================================================================
   plan:
-    name: "Terraform Plan"
+    name: "Terraform Plan (${{ github.event.inputs.environment || 'dev' }})"
     needs: [validate]
     runs-on: ubuntu-latest
     steps:
@@ -93,32 +100,48 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Init
-        working-directory: ${{ env.DEFAULT_ENV_DIR }}
-        run: terraform init
+      - name: Initialize Terraform with Dynamic Backend
+        working-directory: environments/${{ env.TARGET_ENV }}
+        run: |
+          if [ -n "${{ env.TF_STATE_STORAGE }}" ] && [ -n "${{ env.ARM_CLIENT_ID }}" ]; then
+            echo "Initializing with Remote Azure Backend..."
+            terraform init \
+              -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+              -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+              -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+              -backend-config="key=${{ env.TARGET_ENV }}.terraform.tfstate"
+          else
+            echo "Running in Local State Validation mode..."
+            terraform init -backend=false
+          fi
 
       - name: Terraform Plan
         id: plan
-        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        working-directory: environments/${{ env.TARGET_ENV }}
         run: |
-          terraform plan -no-color -out=tfplan
+          if [ -n "${{ env.ARM_CLIENT_ID }}" ]; then
+            terraform plan -no-color -out=tfplan
+          else
+            echo "::warning ::Azure Credentials (AZURE_CLIENT_ID) not configured in GitHub Secrets. Skipping remote plan execution."
+          fi
         continue-on-error: false
 
-      - name: Upload Terraform Plan Artifact
+      - name: Upload Plan Artifact
+        if: env.ARM_CLIENT_ID != ''
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-dev
-          path: ${{ env.DEFAULT_ENV_DIR }}/tfplan
+          name: tfplan-${{ env.TARGET_ENV }}
+          path: environments/${{ env.TARGET_ENV }}/tfplan
 
   # ===========================================================================
-  # 3. APPLY (Runs only on Push to main or Manual Approval Trigger)
+  # 3. TERRAFORM APPLY (Automated on Main Merge or Manual Dispatch)
   # ===========================================================================
   apply:
-    name: "Terraform Apply"
+    name: "Terraform Apply (${{ github.event.inputs.environment || 'dev' }})"
     needs: [plan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
     runs-on: ubuntu-latest
-    environment: dev # GitHub Environment with optional Protection Rules / Approvers
+    environment: dev
 
     steps:
       - name: Checkout Code
@@ -129,16 +152,16 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Download Terraform Plan Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-dev
-          path: ${{ env.DEFAULT_ENV_DIR }}
-
-      - name: Terraform Init
-        working-directory: ${{ env.DEFAULT_ENV_DIR }}
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: ${{ env.DEFAULT_ENV_DIR }}
-        run: terraform apply -auto-approve tfplan
+      - name: Apply Infrastructure
+        working-directory: environments/${{ env.TARGET_ENV }}
+        run: |
+          if [ -n "${{ env.TF_STATE_STORAGE }}" ] && [ -n "${{ env.ARM_CLIENT_ID }}" ]; then
+            terraform init \
+              -backend-config="resource_group_name=${{ env.TF_STATE_RG }}" \
+              -backend-config="storage_account_name=${{ env.TF_STATE_STORAGE }}" \
+              -backend-config="container_name=${{ env.TF_STATE_CONTAINER }}" \
+              -backend-config="key=${{ env.TARGET_ENV }}.terraform.tfstate"
+            terraform apply -auto-approve
+          else
+            echo "::warning ::Azure Credentials or Storage Account not set in Secrets. Skipping live apply."
+          fi

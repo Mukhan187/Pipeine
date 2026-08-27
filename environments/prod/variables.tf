@@ -40,6 +40,24 @@ variable "storage_account_name" {
   default     = "stprodstudyapp01"
 }
 
+variable "storage_containers" {
+  description = "List of blob storage containers to create"
+  type        = list(string)
+  default     = ["data", "logs", "backups"]
+}
+
+variable "storage_account_tier" {
+  description = "Storage account tier (Standard or Premium)"
+  type        = string
+  default     = "Standard"
+}
+
+variable "storage_replication_type" {
+  description = "Storage account replication (LRS, GRS, ZRS)"
+  type        = string
+  default     = "GRS"
+}
+
 variable "vm_size" {
   description = "Size SKU of the Virtual Machine"
   type        = string

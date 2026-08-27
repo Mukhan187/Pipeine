@@ -40,6 +40,24 @@ variable "storage_account_name" {
   default     = "stdevstudyapp01"
 }
 
+variable "storage_containers" {
+  description = "List of blob storage containers to create"
+  type        = list(string)
+  default     = ["data", "logs"]
+}
+
+variable "storage_account_tier" {
+  description = "Storage account tier (Standard or Premium)"
+  type        = string
+  default     = "Standard"
+}
+
+variable "storage_replication_type" {
+  description = "Storage account replication (LRS, GRS, ZRS)"
+  type        = string
+  default     = "LRS"
+}
+
 variable "vm_size" {
   description = "Size SKU of the Virtual Machine"
   type        = string
@@ -55,7 +73,7 @@ variable "admin_username" {
 variable "admin_password" {
   description = "Admin password for the VM (used if admin_ssh_public_key is null)"
   type        = string
-  default     = "P@ssw0rd12345!"
+  default     = "StudyDev@Azure2026!"
   sensitive   = true
 }
 
