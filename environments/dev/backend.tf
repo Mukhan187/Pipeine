@@ -1,12 +1,16 @@
 # -----------------------------------------------------------------------------
-# Dynamic / Generic Azure Remote State Backend
+# Azure Remote State Backend Configuration (Optional for Local Study)
 # -----------------------------------------------------------------------------
-# No hardcoded values. Backend parameters are passed dynamically during:
-# terraform init -backend-config="resource_group_name=..." \
-#                -backend-config="storage_account_name=..." \
-#                -backend-config="container_name=..." \
-#                -backend-config="key=..."
+# Local run ke liye by default local state use hogi.
+# Agar Azure Storage Remote Backend use karna ho, toh neeche wala block uncomment karein:
+#
+# terraform {
+#   backend "azurerm" {}
+# }
+#
+# Aur init aise karein:
+# terraform init -backend-config="resource_group_name=rg-terraform-tfstate" \
+#                -backend-config="storage_account_name=stterraformtfstatedev01" \
+#                -backend-config="container_name=tfstate" \
+#                -backend-config="key=dev.terraform.tfstate"
 # -----------------------------------------------------------------------------
-terraform {
-  backend "azurerm" {}
-}

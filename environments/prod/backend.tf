@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
-# Dynamic / Generic Azure Remote State Backend (Prod)
+# Azure Remote State Backend Configuration (Optional for Local Study)
 # -----------------------------------------------------------------------------
-terraform {
-  backend "azurerm" {}
-}
+# terraform {
+#   backend "azurerm" {}
+# }
