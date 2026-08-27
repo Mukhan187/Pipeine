@@ -1,0 +1,20 @@
+environment          = "prod"
+project_name         = "studyapp"
+location             = "eastus2"
+address_space        = ["10.100.0.0/16"]
+storage_account_name = "stprodstudyapp01"
+vm_size              = "Standard_D2s_v3"
+admin_username       = "azureadmin"
+admin_ssh_public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... user@domain.com"
+
+subnets = {
+  "app-subnet" = {
+    address_prefixes = ["10.100.1.0/24"]
+  }
+}
+
+extra_tags = {
+  Owner       = "Production-Operations"
+  CostCenter  = "Prod-Core-01"
+  Compliance  = "PCI-DSS"
+}

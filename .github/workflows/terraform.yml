@@ -1,0 +1,144 @@
+name: "Terraform Azure CI/CD Pipeline"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "environments/**"
+      - "modules/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - "environments/**"
+      - "modules/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+      action:
+        description: "Terraform action to perform"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  TF_VERSION: "1.7.5"
+  DEFAULT_ENV_DIR: "environments/dev"
+
+jobs:
+  # ===========================================================================
+  # 1. LINT & VALIDATE
+  # ===========================================================================
+  validate:
+    name: "Terraform Format & Validate"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Dev Environment
+        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        run: terraform init -backend=false
+
+      - name: Validate Dev Code
+        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        run: terraform validate
+
+  # ===========================================================================
+  # 2. PLAN (Runs on PR and Pushes to main)
+  # ===========================================================================
+  plan:
+    name: "Terraform Plan"
+    needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        run: |
+          terraform plan -no-color -out=tfplan
+        continue-on-error: false
+
+      - name: Upload Terraform Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-dev
+          path: ${{ env.DEFAULT_ENV_DIR }}/tfplan
+
+  # ===========================================================================
+  # 3. APPLY (Runs only on Push to main or Manual Approval Trigger)
+  # ===========================================================================
+  apply:
+    name: "Terraform Apply"
+    needs: [plan]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'apply')
+    runs-on: ubuntu-latest
+    environment: dev # GitHub Environment with optional Protection Rules / Approvers
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Download Terraform Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-dev
+          path: ${{ env.DEFAULT_ENV_DIR }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.DEFAULT_ENV_DIR }}
+        run: terraform apply -auto-approve tfplan

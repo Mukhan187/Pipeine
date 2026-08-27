@@ -1,0 +1,157 @@
+# =============================================================================
+# Azure DevOps CI/CD Multi-Stage Pipeline for Terraform
+# =============================================================================
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - environments/**
+      - modules/**
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - environments/**
+      - modules/**
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  - name: tf_version
+    value: "1.7.5"
+  - name: working_dir
+    value: "$(System.DefaultWorkingDirectory)/environments/dev"
+  # Set Azure Service Connection Name configured in Azure DevOps Project Settings
+  - name: azureServiceConnection
+    value: "Azure-Service-Connection"
+  - name: backendResourceGroup
+    value: "rg-terraform-tfstate"
+  - name: backendStorageAccount
+    value: "stterraformtfstatedev01"
+  - name: backendContainer
+    value: "tfstate"
+  - name: backendKey
+    value: "dev.terraform.tfstate"
+
+stages:
+  # ---------------------------------------------------------------------------
+  # STAGE 1: VALIDATE & LINT
+  # ---------------------------------------------------------------------------
+  - stage: Validate
+    displayName: "Stage 1: Validate & Lint"
+    jobs:
+      - job: TerraformValidate
+        displayName: "Format & Validation Check"
+        steps:
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform $(tf_version)"
+            inputs:
+              terraformVersion: $(tf_version)
+
+          - script: |
+              terraform fmt -check -recursive
+            displayName: "Terraform Format Check"
+            workingDirectory: $(System.DefaultWorkingDirectory)
+
+          - script: |
+              terraform init -backend=false
+              terraform validate
+            displayName: "Terraform Validate"
+            workingDirectory: $(working_dir)
+
+  # ---------------------------------------------------------------------------
+  # STAGE 2: TERRAFORM PLAN
+  # ---------------------------------------------------------------------------
+  - stage: Plan
+    displayName: "Stage 2: Terraform Plan (Dev)"
+    dependsOn: Validate
+    jobs:
+      - job: TerraformPlan
+        displayName: "Run Terraform Plan"
+        steps:
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform $(tf_version)"
+            inputs:
+              terraformVersion: $(tf_version)
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Init"
+            inputs:
+              provider: "azurerm"
+              command: "init"
+              workingDirectory: $(working_dir)
+              backendServiceArm: $(azureServiceConnection)
+              backendAzureRmResourceGroupName: $(backendResourceGroup)
+              backendAzureRmStorageAccountName: $(backendStorageAccount)
+              backendAzureRmContainerName: $(backendContainer)
+              backendAzureRmKey: $(backendKey)
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Plan"
+            inputs:
+              provider: "azurerm"
+              command: "plan"
+              workingDirectory: $(working_dir)
+              environmentServiceNameAzureRM: $(azureServiceConnection)
+              commandOptions: "-out=$(System.DefaultWorkingDirectory)/tfplan"
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Plan Artifact"
+            inputs:
+              targetPath: "$(System.DefaultWorkingDirectory)/tfplan"
+              artifact: "tfplan"
+              publishLocation: "pipeline"
+
+  # ---------------------------------------------------------------------------
+  # STAGE 3: TERRAFORM APPLY (Requires Manual Approval in Azure DevOps Environment)
+  # ---------------------------------------------------------------------------
+  - stage: Apply
+    displayName: "Stage 3: Terraform Apply (Dev)"
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: TerraformApply
+        displayName: "Deploy to Azure"
+        environment: "dev-environment" # Configure approvals and checks here in Azure DevOps
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: TerraformInstaller@1
+                  displayName: "Install Terraform $(tf_version)"
+                  inputs:
+                    terraformVersion: $(tf_version)
+
+                - task: DownloadPipelineArtifact@2
+                  displayName: "Download Plan Artifact"
+                  inputs:
+                    buildType: "current"
+                    artifactName: "tfplan"
+                    targetPath: $(working_dir)
+
+                - task: TerraformTaskV4@4
+                  displayName: "Terraform Init"
+                  inputs:
+                    provider: "azurerm"
+                    command: "init"
+                    workingDirectory: $(working_dir)
+                    backendServiceArm: $(azureServiceConnection)
+                    backendAzureRmResourceGroupName: $(backendResourceGroup)
+                    backendAzureRmStorageAccountName: $(backendStorageAccount)
+                    backendAzureRmContainerName: $(backendContainer)
+                    backendAzureRmKey: $(backendKey)
+
+                - task: TerraformTaskV4@4
+                  displayName: "Terraform Apply"
+                  inputs:
+                    provider: "azurerm"
+                    command: "apply"
+                    workingDirectory: $(working_dir)
+                    environmentServiceNameAzureRM: $(azureServiceConnection)
+                    commandOptions: "tfplan"

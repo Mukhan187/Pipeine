@@ -1,0 +1,20 @@
+environment          = "dev"
+project_name         = "studyapp"
+location             = "eastus"
+address_space        = ["10.0.0.0/16"]
+storage_account_name = "stdevstudyapp01"
+vm_size              = "Standard_B1s"
+admin_username       = "azureuser"
+admin_password       = "YourStrongPasswordHere!"
+
+subnets = {
+  "app-subnet" = {
+    address_prefixes = ["10.0.1.0/24"]
+  }
+}
+
+extra_tags = {
+  Owner       = "DevOps-Team"
+  CostCenter  = "Study-101"
+  AutoCleanup = "True"
+}
