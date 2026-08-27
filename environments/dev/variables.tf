@@ -61,7 +61,7 @@ variable "storage_replication_type" {
 variable "vm_size" {
   description = "Size SKU of the Virtual Machine"
   type        = string
-  default     = "Standard_B1s"
+  default     = "Standard_B1ms"
 }
 
 variable "admin_username" {
