@@ -44,7 +44,7 @@ permissions:
 env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID || 'ab68169d-6777-48cf-a60c-a14fa1aed3ad' }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID || 'c14887df-3ce2-44d2-adb8-4405e7e105d8' }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID || '4a2b17d6-1fca-4667-b104-d0ccd5c3a172' }}
   TF_STATE_RG: ${{ secrets.TF_STATE_RESOURCE_GROUP || 'rg-terraform-tfstate' }}
   TF_STATE_STORAGE: ${{ secrets.TF_STATE_STORAGE_ACCOUNT }}
